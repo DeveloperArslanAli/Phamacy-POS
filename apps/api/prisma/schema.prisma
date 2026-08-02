@@ -1,0 +1,452 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                String              @id @default(cuid())
+  pharmacyName      String
+  ownerName         String?
+  email             String?
+  phone             String?
+  address           String?
+  licenseKey        String?             @unique
+  subscriptionPlan  String              @default("standard")
+  status            String              @default("active")
+  expiryDate        DateTime?
+  timezone          String              @default("UTC")
+  locale            String              @default("en-US")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  audits            AuditEvent[]
+  devices           Device[]
+  items             Item[]
+  licenses          License[]
+  locations         Location[]
+  patients          Patient[]
+  refunds           Refund[]
+  sales             Sale[]
+  outbox            SyncOutbox[]
+  users             User[]
+  settings          Setting[]
+  itemVariants      ItemVariant[]
+  batchLots         BatchLot[]
+  inventoryBalances InventoryBalance[]
+  inventoryMovements InventoryMovement[]
+  prescriptionLines PrescriptionLine[]
+  saleLines         SaleLine[]
+  payments          Payment[]
+}
+
+model Location {
+  id                             String              @id @default(cuid())
+  tenantId                       String
+  code                           String
+  name                           String
+  address                        String?
+  createdAt                      DateTime            @default(now())
+  updatedAt                      DateTime            @updatedAt
+  inventoryBalances              InventoryBalance[]
+  inventoryMovementsFromLocation InventoryMovement[] @relation("InventoryMovementFromLocation")
+  inventoryMovementsToLocation   InventoryMovement[] @relation("InventoryMovementToLocation")
+  tenant                         Tenant              @relation(fields: [tenantId], references: [id])
+  sales                          Sale[]
+
+  @@unique([tenantId, code])
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  email              String
+  passwordHash       String?
+  displayName        String?
+  role               String   @default("staff")
+  status             String   @default("active")
+  directorySubjectId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  sales              Sale[]
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, email])
+}
+
+model Patient {
+  id                      String         @id @default(cuid())
+  tenantId                String
+  mrn                     String         @unique
+  name                    String
+  preferredName           String?
+  dateOfBirth             DateTime?      // YYYY-MM-DD
+  gender                  String         @default("UNSPECIFIED") // MALE, FEMALE, UNKNOWN, UNSPECIFIED
+  phone                   String?
+  email                   String?
+  addressLine1            String?
+  addressLine2            String?
+  city                    String?
+  state                   String?
+  postalCode              String?
+  smsOptIn                Boolean        @default(true)
+  deceased                Boolean        @default(false)
+  
+  // Clinical Profile
+  allergies               String?        // comma-separated list of drug classes/ingredients, e.g. "Penicillins, Sulfa"
+  conditions              String?        // chronic conditions, e.g. "Diabetes, Hypertension"
+  weight                  Float?         // kg
+  height                  Float?         // cm
+  pregnancyStatus         String         @default("NOT_PREGNANT") // PREGNANT, NOT_PREGNANT, PLANNING, UNKNOWN
+  
+  // Insurance Details (NCPDP standard fields)
+  insBin                  String?        // 6-digit Bank Identification Number
+  insPcn                  String?        // Processor Control Number
+  insGroup                String?        // Group ID
+  insMemberId             String?        // Member / Cardholder ID
+  insRelationship         String         @default("01_CARDHOLDER") // 01_CARDHOLDER, 02_SPOUSE, 03_CHILD, 04_OTHER
+  insCopayPreference      String         @default("PAY_AT_PICKUP") // PAY_AT_PICKUP, AUTO_CHARGE_CARD, HOUSE_ACCOUNT, FSA_HSA
+  
+  // Consent & HIPAA
+  hipaaSigned             Boolean        @default(false)
+  hipaaSignedDate         DateTime?
+  safetyCapWaiver         Boolean        @default(false) // non-safety cap requested
+  safetyCapWaiverDate     DateTime?
+  pickupAuthReps          String?        // comma-separated caregivers authorized to pick up
+  consentFlags            String?
+
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  tenant                  Tenant         @relation(fields: [tenantId], references: [id])
+  prescriptions           Prescription[]
+
+  @@index([tenantId])
+  @@index([name])
+  @@index([phone])
+  @@index([dateOfBirth])
+}
+
+model Item {
+  id                String             @id @default(cuid())
+  tenantId          String
+  sku               String
+  name              String
+  ndc               String?            // Normalized 11-digit NDC (XXXXX-XXXX-XX)
+  deaSchedule       String             @default("non_controlled") // c2, c3, c4, c5, non_controlled, otc
+  dosageForm        String?            // tablet, capsule, oral_liquid, injection, inhaler, topical
+  strength          String?            // e.g. 500mg, 10mg/5mL
+  route             String?            // oral, ophthalmic, topical, subcutaneous
+  packageSize       Float              @default(1) // Units per pack
+  type              String             @default("otc")
+  taxCode           String?
+  reorderPoint      Int                @default(0)
+  maxStockLevel     Int                @default(100) // Par level
+  binLocation       String?
+  category          String             @default("general")
+  genericName       String?
+  manufacturer      String?
+  storageCondition  String             @default("room_temp")
+  unitCost          Float              @default(0) // Base wholesale cost
+  unitPrice         Float              @default(0) // Retail cash price
+  awpPrice          Float              @default(0) // Average Wholesale Price
+  wacPrice          Float              @default(0) // Wholesale Acquisition Cost
+  macPrice          Float              @default(0) // Maximum Allowable Cost
+  isDscsaTrackable  Boolean            @default(true)
+  is340bEligible    Boolean            @default(false)
+  isHazardous       Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  batchLots         BatchLot[]
+  inventoryBalances InventoryBalance[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  variants          ItemVariant[]
+  prescriptionLines PrescriptionLine[]
+  saleLines         SaleLine[]
+
+  @@unique([tenantId, sku])
+  @@index([ndc])
+  @@index([name])
+  @@index([genericName])
+}
+
+model ItemVariant {
+  id        String   @id @default(cuid())
+  tenantId  String
+  itemId    String
+  unitSize  String?
+  barcode   String   @unique
+  uom       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  item      Item     @relation(fields: [itemId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+model BatchLot {
+  id                String             @id @default(cuid())
+  tenantId          String
+  itemId            String
+  batchNo           String
+  serialNumber      String?            // 2D DataMatrix serial number (DSCSA)
+  purchaseOrderNo   String?
+  invoiceNo         String?
+  expiryDate        DateTime
+  cost              Float              @default(0)
+  supplierId        String?
+  supplierName      String?
+  initialQty        Int                @default(0)
+  receiptTemp       Float?             // Celsius temperature logged at receipt
+  status            String             @default("active") // active, quarantined, expired, depleted
+  quarantineReason  String?            // temp_excursion, recall, suspect_product, expired, damaged
+  dscsaVerified     Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  item              Item               @relation(fields: [itemId], references: [id])
+  inventoryBalances InventoryBalance[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+
+  @@unique([itemId, batchNo])
+  @@index([status])
+  @@index([expiryDate])
+  @@index([tenantId])
+}
+
+model InventoryBalance {
+  id          String   @id @default(cuid())
+  tenantId    String
+  locationId  String
+  itemId      String
+  batchLotId  String
+  onHand      Int      @default(0)
+  reserved    Int      @default(0)
+  quarantined Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  batchLot    BatchLot @relation(fields: [batchLotId], references: [id])
+  item        Item     @relation(fields: [itemId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([locationId, itemId, batchLotId])
+  @@index([itemId])
+  @@index([batchLotId])
+  @@index([tenantId])
+}
+
+model InventoryMovement {
+  id             String    @id @default(cuid())
+  tenantId       String
+  movementType   String
+  referenceType  String
+  referenceId    String
+  qty            Int
+  fromLocationId String?
+  toLocationId   String?
+  itemId         String?
+  batchLotId     String?
+  createdAt      DateTime  @default(now())
+  fromLocation   Location? @relation("InventoryMovementFromLocation", fields: [fromLocationId], references: [id])
+  toLocation     Location? @relation("InventoryMovementToLocation", fields: [toLocationId], references: [id])
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([referenceType, referenceId])
+  @@index([itemId])
+  @@index([batchLotId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([tenantId])
+}
+
+model Prescription {
+  id                       String             @id @default(cuid())
+  tenantId                 String
+  patientId                String
+  prescriberId             String?
+  status                   String             @default("received")
+  rxNo                     String             @unique
+  issuedAt                 DateTime           @default(now())
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+  pharmacistNotes          String?
+  prescriberName           String?
+  priority                 String             @default("routine")
+  refillsAllowed           Int                @default(0)
+  refillsFilled            Int                @default(0)
+  scheduleCode             String?            @default("legend")
+  verificationPharmacistId String?
+  verifiedAt               DateTime?
+  patient                  Patient            @relation(fields: [patientId], references: [id])
+  lines                    PrescriptionLine[]
+
+  @@index([tenantId])
+  @@index([patientId])
+  @@index([status])
+  @@index([issuedAt])
+}
+
+model PrescriptionLine {
+  id             String       @id @default(cuid())
+  tenantId       String
+  prescriptionId String
+  itemId         String
+  qty            Int
+  dosage         String?
+  directions     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  item           Item         @relation(fields: [itemId], references: [id])
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id])
+
+  @@index([prescriptionId])
+  @@index([itemId])
+  @@index([tenantId])
+}
+
+model Sale {
+  id         String     @id @default(cuid())
+  tenantId   String
+  locationId String
+  cashierId  String
+  status     String     @default("completed")
+  totals     Float      @default(0)
+  tenderedAt DateTime   @default(now())
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  payments   Payment[]
+  refunds    Refund[]
+  cashier    User       @relation(fields: [cashierId], references: [id])
+  location   Location   @relation(fields: [locationId], references: [id])
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  lines      SaleLine[]
+
+  @@index([tenantId])
+  @@index([cashierId])
+  @@index([locationId])
+  @@index([tenderedAt])
+}
+
+model SaleLine {
+  id        String   @id @default(cuid())
+  tenantId  String
+  saleId    String
+  itemId    String
+  qty       Int
+  unitPrice Float
+  discount  Float    @default(0)
+  tax       Float    @default(0)
+  createdAt DateTime @default(now())
+  item      Item     @relation(fields: [itemId], references: [id])
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([saleId])
+  @@index([itemId])
+  @@index([tenantId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  saleId      String
+  method      String
+  amount      Float
+  providerRef String?
+  status      String   @default("completed")
+  createdAt   DateTime @default(now())
+  sale        Sale     @relation(fields: [saleId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([saleId])
+  @@index([tenantId])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  tenantId   String
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String
+  before     String?
+  after      String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([createdAt])
+}
+
+model Refund {
+  id         String   @id @default(cuid())
+  tenantId   String
+  saleId     String
+  amount     Float
+  reason     String
+  approvedBy String?
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+  sale       Sale     @relation(fields: [saleId], references: [id])
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([saleId])
+}
+
+model License {
+  id                String    @id @default(cuid())
+  tenantId          String
+  status            String    @default("active")
+  planCode          String
+  expiresAt         DateTime
+  offlineGraceUntil DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Device {
+  id                String   @id @default(cuid())
+  tenantId          String
+  deviceFingerprint String
+  name              String
+  lastSeenAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model SyncOutbox {
+  id            String    @id @default(cuid())
+  tenantId      String
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       String
+  status        String    @default("pending")
+  createdAt     DateTime  @default(now())
+  processedAt   DateTime?
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}

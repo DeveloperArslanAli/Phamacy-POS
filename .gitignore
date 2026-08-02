@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+out/
+coverage/
+.env
+*.env
+*.tsbuildinfo
+.vite/
+.turbo/
+.DS_Store
+*.log
+Pharmacy POS.rar
+apps/desktop/dist-release/
+apps/desktop/renderer/assets/

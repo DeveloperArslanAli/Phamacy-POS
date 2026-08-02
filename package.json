@@ -1,0 +1,22 @@
+{
+  "name": "hmat-pharmacy",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run start:dev",
+    "dev:desktop": "npm --workspace apps/desktop run dev",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:desktop\"",
+    "build": "npm --workspace apps/api run build && npm --workspace apps/desktop run build",
+    "db:push": "npm --workspace apps/api run prisma:push",
+    "db:seed": "npm --workspace apps/api run prisma:seed",
+    "setup": "npm install && npm run db:push && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  },
+  "dependencies": {
+    "electron": "^43.1.1"
+  }
+}

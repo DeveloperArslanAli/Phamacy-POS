@@ -145,6 +145,4 @@ npm run dev
 
 You can test different user roles using the quick role switcher in the bottom-left corner of the Desktop UI or using these seeded credentials:
 
-- **Admin Staff**: `admin@hmatpharmacy.local` / `admin1234`
-- **Pharmacist**: `pharmacist@hmatpharmacy.local` / `admin1234`
 - **Cashier**: `cashier@hmatpharmacy.local` / `admin1234`
